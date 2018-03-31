@@ -81,29 +81,26 @@ if __name__ == '__main__':
     print("Parsing samples")
     def parse_sample(sNLP, context, question, answer, **kwargs):
         tokens = sNLP.word_tokenize(unidecode(context))
-        #context_vec = [get_word_vector(token) for token in tokens]
-        #contexts.append(context_vec)
-        contexts.append(tokens)
+        tokens = [token.lower() for token in tokens]
+        contexts.append(tokens + ["<end>"])
 
         tokens = sNLP.word_tokenize(unidecode(question))
-        #question_vec = [get_word_vector(token) for token in tokens]
+        tokens = [token.lower() for token in tokens]
 
-        #qn_input_vec = [get_word_vector("<start>")] + question_vec
-        #qn_input.append(qn_input_vec)
         qn_input.append(["<start>"] + tokens)
 
         qn_out_int_enc = [IntegerEncode(token, word_index_map) for token in tokens] + [IntegerEncode("<end>", word_index_map)]
         qn_output.append(qn_out_int_enc)
 
         tokens = sNLP.word_tokenize(unidecode(answer))
-        #answer_vec = [get_word_vector(token) for token in answer]
-        #answers.append(answer_vec)
+        tokens = [token.lower() for token in tokens]
         answers.append(tokens)
 
         return None
 
     samples = [parse_sample(sNLP, **sample) for sample in tqdm(samples)]
 
+    contexts, qn_output, answers, qn_input = np.array(contexts), np.array(qn_output), np.array(answers), np.array(qn_input)
     data = {
         "context": contexts,
         "qn_output": qn_output,
@@ -113,5 +110,21 @@ if __name__ == '__main__':
 
     print('Writing to file {}... '.format(args.outfile))
     with open(args.outfile, 'wb') as fd:
+        pickle.dump(data, fd, protocol=pickle.HIGHEST_PROTOCOL)
+    print('Done!')
+
+
+    trimmed_len = 800
+    indices = np.random.choice(len(contexts), trimmed_len, replace=False)
+
+    data = {
+        "context": contexts[indices],
+        "qn_output": qn_output[indices],
+        "answer": answers[indices],
+        "qn_input": qn_input[indices]
+    }
+
+    print('Writing to file {}... '.format("data/preprocessed_data_trimmed.pkl"))
+    with open("data/preprocessed_data_trimmed.pkl", 'wb') as fd:
         pickle.dump(data, fd, protocol=pickle.HIGHEST_PROTOCOL)
     print('Done!')

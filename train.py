@@ -1,7 +1,7 @@
 import cPickle as pickle
 import operator
 import numpy as np
-from model import Seq2SeqModel
+from model import TrainingModel
 import random
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
@@ -74,10 +74,12 @@ if __name__ == '__main__':
 	parser.add_argument('--word2vec_path', type=str,
 						default='data/glove.6B.100d.trimmed.vec',
 						help='Word2Vec vectors file path')
+	parser.add_argument('--data', type=str, default='data/preprocessed_data.pkl',
+                        help='Desired path to output pickle')
 	args = parser.parse_args()
 
 	print "Loading training data"
-	with open("data/preprocessed_data_trimmed.pkl") as f:
+	with open(args.data) as f:
 		data = pickle.load(f)
 	print "Done"
 
@@ -85,14 +87,13 @@ if __name__ == '__main__':
 
 	context, qn_output, qn_input, answer = operator.itemgetter("context", "qn_output", "qn_input", "answer")(data)
 	num_train = len(context)
+	context, qn_output, qn_input, answer = np.array(context), np.array(qn_output), np.array(qn_input), np.array(answer)
 
-	model = Seq2SeqModel()
+	model = TrainingModel()
 	data_generator = DataGen(context=context, qn_output=qn_output, qn_input=qn_input, get_word_vector=get_word_vector)
 
-	checkpoint = ModelCheckpoint('model/{epoch:02d}.hdf5')
+	checkpoint = ModelCheckpoint('model/model.{epoch:02d}.hdf5')
 	model.fit_generator(data_generator, steps_per_epoch=num_train // batch_size, epochs=epochs, verbose=1, callbacks=[checkpoint])
-
-
 
 
 
