@@ -1,12 +1,15 @@
 from keras.models import Model
-from keras.layers import Input, LSTM, Dense
+from keras.layers import Input, LSTM, Dense, Bidirectional, Concatenate
 import cPickle as pickle
 import operator
 from keras.utils.vis_utils import plot_model
 from word2vec_preprocessing import embedding_dimension, word_vector_len
+import numpy as np
+import tensorflow as tf
 
-hidden_dim = 64
-def TrainingModel(hidden_dim = hidden_dim):
+hidden_dim = 256
+
+"""def TrainingModel():
 	encoder_inputs = Input(shape=(None, embedding_dimension))
 	encoder = LSTM(hidden_dim, return_state=True, name="encoder_lstm")
 	encoder_outputs, state_h, state_c = encoder(encoder_inputs)
@@ -24,7 +27,27 @@ def TrainingModel(hidden_dim = hidden_dim):
 
 
 	plot_model(model, to_file='training_model.png', show_shapes=True)
+	return model"""
+
+def TraininigModel():
+	encoder_inputs = Input(shape=(None, embedding_dimension))
+	encoder = Bidirectional(LSTM(hidden_dim, return_state=True, name="encoder_lstm"), merge='concat')
+	encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
+
+	print forward_h
+	state_h = Concatenate()([forward_h, backward_h])
+	state_c = Concatenate()([forward_c, backward_c])
+	encoder_states = [state_h, state_c]
+	print state_h
+	print encoder_outputs
+
+	model = Model(encoder_inputs, [encoder_outputs, state_h, state_c])
+	model.compile(optimizer="rmsprop", loss="categorical_crossentropy")
+
+	plot_model(model, to_file='training_model.png', show_shapes=True)
 	return model
+
+
 
 def PredictionEncoderModel():
 	encoder_inputs = Input(shape=(None, embedding_dimension))

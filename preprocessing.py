@@ -54,7 +54,7 @@ if __name__ == '__main__':
                         help='Word2Vec vectors file path')
     parser.add_argument('--outfile', type=str, default='data/preprocessed_data.pkl',
                         help='Desired path to output pickle')
-    parser.add_argument('--data', type=str, default="data/train_parsed_record.json",
+    parser.add_argument('--data', type=str, default="data/train_parsed.json",
                         help='Data json')
     args = parser.parse_args()
 

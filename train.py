@@ -1,99 +1,119 @@
+from keras.models import Model
+from model import PredictionEncoderModel, PredictionDecoderModel
+from keras.models import Model
+from keras.layers import Input, LSTM, Dense, Bidirectional, Concatenate, Softmax
 import cPickle as pickle
 import operator
+from keras.utils.vis_utils import plot_model
+from word2vec_preprocessing import embedding_dimension, word_vector_len
 import numpy as np
-from model import TrainingModel
-import random
-from keras.preprocessing.sequence import pad_sequences
-from keras.utils import to_categorical
-from keras.callbacks import ModelCheckpoint
-from word2vec_preprocessing import word_vector_len
-from gensim.models import KeyedVectors
-import argparse
-
-epochs = 5
-batch_size = 32
-bin_size = 50
-num_bins = 7
-
-def word2vec(word2vec_path):
-	print('Reading word2vec data... ')
-	model = KeyedVectors.load_word2vec_format(word2vec_path)
-	print('Done')
-
-	def get_word_vector(word):
-		try:
-			return model[word.lower()]
-		except KeyError:
-			return model["<unk>"]
-	return get_word_vector
-
-def DataGen(context, qn_output, qn_input, get_word_vector):
-	indices = np.random.permutation(len(context))
-	context, qn_output, qn_input = context[indices], qn_output[indices], qn_input[indices]
-
-	context_bins = [[] for _ in xrange(num_bins)]
-	question_output_bins = [[] for _ in xrange(num_bins)]
-	question_input_bins = [[] for _ in xrange(num_bins)]
+import tensorflow as tf
 
 
-	def put(c, qout, qin, idx):
-		context_bins[idx].append(c)
-		question_output_bins[idx].append(qout)
-		question_input_bins[idx].append(qin)
+#from keras import backend as K
+from keras.engine.topology import Layer
+import tensorflow as K
 
-	idx = 0
-	while True:
-		if idx == len(context):
-			idx = 0
-			indices = np.random.permutation(len(context))
-			context, qn_output, qn_input = context[indices], qn_output[indices], qn_input[indices]
+class Attention(Layer):
 
-		bin_idx = min(num_bins-1, len(context[idx]) // bin_size)
-		put(context[idx], qn_output[idx], qn_input[idx], bin_idx)
+    def __init__(self, **kwargs):
+        super(Attention, self).__init__(**kwargs)
 
-		if len(context_bins[bin_idx]) == batch_size:
-			embedded_context = [map(get_word_vector, cxt) for cxt in context_bins[bin_idx]]
-			padded_context = pad_sequences(embedded_context, maxlen=len(max(embedded_context, key=len)), padding='post')
-			
-			embedded_question_input = [map(get_word_vector, question) for question in question_input_bins[bin_idx]]
-			padded_question_input = pad_sequences(embedded_question_input, maxlen=len(max(embedded_question_input, key=len)), padding='post')
-			
-			padded_question_output = pad_sequences(question_output_bins[bin_idx], maxlen=len(max(question_output_bins[bin_idx], key=len)), padding='post')
-			one_hot_question_output = to_categorical(padded_question_output, num_classes=word_vector_len)
+    def build(self, input_shape):
+        b_shape, h_shape = input_shape
+        self.W_b = self.add_weight(name='W_b', 
+                                      shape=(1, b_shape[2], b_shape[2]),
+                                      initializer='glorot_uniform',
+                                      trainable=True)
+        super(Attention, self).build(input_shape) 
 
-			context_bins[bin_idx] = []
-			question_output_bins[bin_idx] = []
-			question_input_bins[bin_idx] = []
-			
-			yield [padded_context, padded_question_input], one_hot_question_output
+    def call(self, x):
+        b, h = x
+        b_shape = K.shape(b)
 
-		idx += 1
+        tmp1 = K.matmul(h, self.W_b)
+        b_trans = K.transpose(b, perm=[0,2,1])
+        tmp2 = K.matmul(tmp1, b_trans)
 
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--word2vec_path', type=str,
-						default='data/glove.6B.100d.trimmed.vec',
-						help='Word2Vec vectors file path')
-	parser.add_argument('--data', type=str, default='data/preprocessed_data.pkl',
-                        help='Desired path to output pickle')
-	args = parser.parse_args()
+        softmax = Softmax(axis=-1)
+        softmax_outputs = softmax(tmp2)
 
-	print "Loading training data"
-	with open(args.data) as f:
-		data = pickle.load(f)
-	print "Done"
+        softmax_outputs_tiled = K.tile(softmax_outputs, [1,1,b_shape[2]])
+        softmax_outputs_broadcast = K.reshape(softmax_outputs_tiled, K.shape(softmax_outputs_tiled)+[b_shape[2]])
 
-	get_word_vector = word2vec(args.word2vec_path)
+        shape = K.shape(b)
+        b_reshaped = K.reshape(b, [shape[0],1,shape[1],shape[2]])
+        b_broadcast = K.tile(b_reshaped, [1,b_shape[2],1,1])
 
-	context, qn_output, qn_input, answer = operator.itemgetter("context", "qn_output", "qn_input", "answer")(data)
-	num_train = len(context)
-	context, qn_output, qn_input, answer = np.array(context), np.array(qn_output), np.array(qn_input), np.array(answer)
+        cxt_vector_unsummed = K.multiply(softmax_outputs_broadcast, b_broadcast)
+        cxt_vector_unshaped = K.reduce_sum(cxt_vector_unsummed, axis=2)
+        shape = K.shape(cxt_vector_unshaped)
+        cxt_vector = K.reshape(cxt_vector_unshaped, [shape[0],shape[1],shape[2]])
 
-	model = TrainingModel()
-	data_generator = DataGen(context=context, qn_output=qn_output, qn_input=qn_input, get_word_vector=get_word_vector)
+        return cxt_vector
 
-	checkpoint = ModelCheckpoint('model/model.{epoch:02d}.hdf5')
-	model.fit_generator(data_generator, steps_per_epoch=num_train // batch_size, epochs=epochs, verbose=1, callbacks=[checkpoint])
+    def compute_output_shape(self, input_shape):
+        b_shape, h_shape = input_shape
+        return (h_shape[0], h_shape[1], b_shape[2])
+
+class AdvancedSoftmax(Layer):
+
+    def __init__(self, output_dim, **kwargs):
+        self.output_dim = output_dim
+        super(AdvancedSoftmax, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.W_t = self.add_weight(name='W_t', 
+                                      shape=(1, 1, input_shape[2]),
+                                      initializer='glorot_uniform',
+                                      trainable=True)
+        self.W_s = self.add_weight(name='W_s', 
+                                      shape=(1, input_shape[2], self.output_dim),
+                                      initializer='glorot_uniform',
+                                      trainable=True)
+        super(AdvancedSoftmax, self).build(input_shape) 
+
+    def call(self, x):
+        W_t_broadcast = K.tile(self.W_t, [K.shape(x)[0],K.shape(x)[1],1])
+
+        tanh_input = K.multiply(W_t_broadcast, x)
+        tanh_output = K.tanh(tanh_input)
+
+        softmax_inputs = K.matmul(tanh_output, self.W_s)
+        softmax = Softmax(axis=-1)
+        softmax_outputs = softmax(softmax_inputs)
+
+        return softmax_outputs
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], self.output_dim)
 
 
 
+hidden_dim = 256
+
+encoder_inputs = Input(shape=(75, embedding_dimension))
+encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat')
+encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
+
+state_h = Concatenate()([forward_h, backward_h])
+state_c = Concatenate()([forward_c, backward_c])
+encoder_states = [state_h, state_c]
+
+
+decoder_inputs = Input(shape=(10, embedding_dimension))
+decoder_lstm = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm")
+decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+
+attention = Attention()
+cxt_vector = attention([encoder_outputs, decoder_outputs])
+
+adv_softmax_input = Concatenate()([decoder_outputs, cxt_vector])
+
+adv_softmax = AdvancedSoftmax(word_vector_len)
+output = adv_softmax(adv_softmax_input)
+
+model = Model([encoder_inputs, decoder_inputs], output)
+model.compile(optimizer="rmsprop", loss="categorical_crossentropy")
+
+plot_model(model, to_file='training_model.png', show_shapes=True)

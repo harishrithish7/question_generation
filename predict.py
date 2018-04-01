@@ -1,9 +1,9 @@
-from keras.models import Model, load_model
+from keras.models import Model, load_model, Sequential
 from gensim.models import KeyedVectors
 import argparse
 import cPickle as pickle
 import operator
-from model import PredictionEncoderModel, PredictionDecoderModel
+from model import PredictionEncoderModel, PredictionDecoderModel, TrainingModel
 from word2vec_preprocessing import embedding_dimension
 import numpy as np
 
@@ -26,6 +26,8 @@ if __name__ == '__main__':
 						help='Word2Vec vectors file path')
 	parser.add_argument('--data', type=str, default='data/preprocessed_data_trimmed.pkl',
 						help='Desired path to output pickle')
+	parser.add_argument('--path_to_load_weights', type=str, default="pre-trained/best.hdf5",
+						help="Path to pre-trained model")
 	args = parser.parse_args()
 
 	print "Loading training data"
@@ -39,7 +41,9 @@ if __name__ == '__main__':
 
 	context, qn_output, qn_input, answer = operator.itemgetter("context", "qn_output", "qn_input", "answer")(data)
 
-	train_model = load_model("model/model.05.hdf5")
+	train_model = TrainingModel()
+	train_model.load_weights(args.path_to_load_weights)
+
 	encoder_model = PredictionEncoderModel()
 	encoder_model.get_layer("encoder_lstm").set_weights(train_model.get_layer("encoder_lstm").get_weights())
 
@@ -49,9 +53,9 @@ if __name__ == '__main__':
 
 	max_decoder_seq_length = 200
 	start = 0
-	end = 1
-	for cxt, qn in zip(context[start:end], qn_input[start:end]):
-		print cxt
+	end = 100
+	for cxt, qn in zip(context[start:end:5], qn_input[start:end:5]):
+		print qn
 		embedded_context = [get_word_vector(token) for token in cxt]
 		encoder_input = np.array(embedded_context).reshape((1,len(embedded_context),embedding_dimension))
 		states_value = encoder_model.predict(encoder_input)
@@ -71,16 +75,16 @@ if __name__ == '__main__':
 			token = index_word_map[token_index]
 			decoded_sentence += token + " "
 
-			if (token == '<unk>' or len(decoded_sentence) > max_decoder_seq_length):
+			if (token == '<end>' or len(decoded_sentence) > max_decoder_seq_length):
 				stop_condition = True
 
-			#decoder_token_vector = get_word_vector(token)
-			#decoder_input = np.array(decoder_token_vector).reshape((1,1,embedding_dimension))
-			token = qn[min(qn_idx, len(qn)-1)]
+			decoder_token_vector = get_word_vector(token)
+			decoder_input = np.array(decoder_token_vector).reshape((1,1,embedding_dimension))
+			"""token = qn[min(qn_idx, len(qn)-1)]
 			print token
 			decoder_token_vector = get_word_vector(token)
 			decoder_input = np.array(decoder_token_vector).reshape((1,1,embedding_dimension))
-			qn_idx += 1
+			qn_idx += 1"""
 
 			states_value = [h, c]
 
