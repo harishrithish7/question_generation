@@ -62,3 +62,9 @@ if __name__ == '__main__':
         with open(args.outfile_valid, 'w') as fd:
             json.dump(valid_cqas, fd)
         print('Done!')
+
+    contexts = []
+    qn_output = []
+    qn_input = []
+    answers = []
+    answers_start = []

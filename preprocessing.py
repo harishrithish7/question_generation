@@ -1,32 +1,20 @@
 import numpy as np
 import json
-import os
 import argparse
 import cPickle as pickle
-
 from os import path
-from gensim.scripts.glove2word2vec import glove2word2vec
 from tqdm import tqdm
 from unidecode import unidecode
-
 from gensim.models import KeyedVectors
+from stanford_corenlp_pywrapper import CoreNLP
 
-from stanfordcorenlp import StanfordCoreNLP
-import logging
+CoreNLP_path = '/home/h7predator/ml_code/stanford-corenlp-full-2018-02-27/'
 
-class StanfordNLP:
-    def __init__(self, host='http://localhost', port=9000):
-        self.nlp = StanfordCoreNLP(host, port=port,
-                                   timeout=30000, quiet=True, logging_level=logging.WARNING)
-        self.props = {
-            'annotators': 'tokenize',
-            'pipelineLanguage': 'en',
-            'outputFormat': 'json'
-        }
-
-    def word_tokenize(self, sentence):
-        return self.nlp.word_tokenize(sentence)
-
+contexts = []
+qn_output = []
+qn_input = []
+answers = []
+sentences = []
 
 def word2vec(word2vec_path):
     print('Reading word2vec data... ')
@@ -47,6 +35,64 @@ def IntegerEncode(word, word_index):
         idx = word_index["<unk>"]
     return idx
 
+def CoreNLP_tokenizer():
+    proc = CoreNLP(configdict={'annotators': 'tokenize,ssplit'},
+                   corenlp_jars=[path.join(CoreNLP_path, '*')])
+
+    def tokenize_with_offset(context):
+        parsed = proc.parse_doc(context)
+        return [(sentence['tokens'], sentence['char_offsets'][0][0], sentence['char_offsets'][-1][-1])
+                     for sentence in parsed['sentences']]
+
+    def tokenize(sentence):
+        parsed = proc.parse_doc(sentence)
+        tokens = []
+        for sentence in parsed['sentences']:
+            tokens += sentence['tokens']
+        return tokens
+
+    return tokenize_with_offset, tokenize
+
+def parse_sample(tokenize_with_offset, tokenize, word_index_map, context, question, answer, answer_start, answer_end, **kwargs):
+    context, question, answer = unidecode(context).lower(), unidecode(question).lower(), unidecode(answer).lower()
+
+    ans_start,ans_end = answer_start,answer_end
+    parsed_cxt = tokenize_with_offset(context)
+    sentence = []
+
+    buff = 1
+    for sent_obj in parsed_cxt:
+        sent, sent_start, sent_end = sent_obj
+        if sent_start >= ans_start and sent_start+buff < ans_end:
+            sentence += sent
+        elif sent_start < ans_start and ans_start < sent_end-buff:
+            sentence += sent
+        if sent_start+buff >= answer_end:
+            break
+
+    if not len(answer) or not len(sentence):
+        return None
+
+    sentences.append(sentence + ["<end>"])
+
+    tokens = tokenize(context)
+    tokens = [unidecode(token) for token in tokens]
+    contexts.append(tokens + ["<end>"])
+
+    tokens = tokenize(question)
+    tokens = [unidecode(token) for token in tokens]
+
+    qn_input.append(["<start>"] + tokens)
+
+    qn_out_int_enc = [IntegerEncode(token, word_index_map) for token in tokens] + [IntegerEncode("<end>", word_index_map)]
+    qn_output.append(qn_out_int_enc)
+
+    tokens = tokenize(answer)
+    tokens = [unidecode(token) for token in tokens]
+    answers.append(tokens)
+
+    return None
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--word2vec_path', type=str,
@@ -66,42 +112,18 @@ if __name__ == '__main__':
         samples = json.load(fd)
     print('Done!')
 
-    sNLP = StanfordNLP()
+    tokenize_with_offset, tokenize = CoreNLP_tokenizer()
 
     word_vector, get_word_vector = word2vec(args.word2vec_path)
-
     word_index_map = dict((word,idx) for idx, word in enumerate(sorted(word_vector.vocab.keys())) )
 
-    contexts = []
-    qn_output = []
-    qn_input = []
-    answers = []
-
-    # converts unicode to ascii
     print("Parsing samples")
-    def parse_sample(sNLP, context, question, answer, **kwargs):
-        tokens = sNLP.word_tokenize(unidecode(context))
-        tokens = [token.lower() for token in tokens]
-        contexts.append(tokens + ["<end>"])
+    samples = [parse_sample(tokenize_with_offset, tokenize, word_index_map, **sample) for sample in tqdm(samples)]
+    print ("Done!")
 
-        tokens = sNLP.word_tokenize(unidecode(question))
-        tokens = [token.lower() for token in tokens]
-
-        qn_input.append(["<start>"] + tokens)
-
-        qn_out_int_enc = [IntegerEncode(token, word_index_map) for token in tokens] + [IntegerEncode("<end>", word_index_map)]
-        qn_output.append(qn_out_int_enc)
-
-        tokens = sNLP.word_tokenize(unidecode(answer))
-        tokens = [token.lower() for token in tokens]
-        answers.append(tokens)
-
-        return None
-
-    samples = [parse_sample(sNLP, **sample) for sample in tqdm(samples)]
-
-    contexts, qn_output, answers, qn_input = np.array(contexts), np.array(qn_output), np.array(answers), np.array(qn_input)
+    sentences, contexts, qn_output, answers, qn_input = np.array(sentences), np.array(contexts), np.array(qn_output), np.array(answers), np.array(qn_input)
     data = {
+        "sentences": sentences,
         "context": contexts,
         "qn_output": qn_output,
         "answer": answers,
@@ -114,10 +136,11 @@ if __name__ == '__main__':
     print('Done!')
 
 
-    trimmed_len = 800
+    trimmed_len = 1000
     indices = np.random.choice(len(contexts), trimmed_len, replace=False)
 
     data = {
+        "sentences": sentences[indices],
         "context": contexts[indices],
         "qn_output": qn_output[indices],
         "answer": answers[indices],
@@ -128,3 +151,4 @@ if __name__ == '__main__':
     with open("data/preprocessed_data_trimmed.pkl", 'wb') as fd:
         pickle.dump(data, fd, protocol=pickle.HIGHEST_PROTOCOL)
     print('Done!')
+
