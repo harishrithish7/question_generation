@@ -1,3 +1,4 @@
 data/
 pre-trained/
 stanford_corenlp_pywrapper/
+*.pyc
