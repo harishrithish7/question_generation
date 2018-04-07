@@ -3,39 +3,8 @@ from keras.preprocessing.text import Tokenizer,one_hot, text_to_word_sequence
 from unidecode import unidecode
 import cPickle as pickle
 import numpy as np
-
-""""with open("data/parsed_data.pkl") as f:
-    data = pickle.load(f)
-print "Done"
-
-conlen = []
-for context in data["context"]:
-    conlen.append(len(context))
-
-qnlen = []
-for question in data["question"]:
-    qnlen.append(len(question))
-
-length = {
-    "conlen": conlen,
-    "qnlen": qnlen
-}
-
-with open("data/length.pkl","wb") as f:
-    pickle.dump(length, f, protocol=pickle.HIGHEST_PROTOCOL)"""
-
-"""with open("data/length.pkl") as f:
-    data = pickle.load(f)
-
-conlen, qnlen = data["conlen"], data["qnlen"]
-
-import matplotlib.pyplot as plt
-bins = [0,50,100,150,200,250,300]
-n, bins, patches = plt.hist(conlen, bins)
-print n
-print bins
-print patches
-plt.show()"""
+from keras.models import Model
+from model import TrainingModel
 
 """print "Loading data"
 with open("data/preprocessed_data.pkl") as f:
@@ -61,11 +30,14 @@ with open("data/preprocessed_data_trimmed.pkl", "wb") as f:
 import json
 
 print('Reading SQuAD data... ')
-with open("data/train_parsed.json") as fd:
-    samples = json.load(fd)
+with open("data/train_parsed_trimmed.pkl") as fd:
+    samples = pickle.load(f)
 print('Done!')
 
 print len(samples)
+
+model = TrainingModel()
+model.load_weights("pre-trained/current.hdf5")
 
 
 

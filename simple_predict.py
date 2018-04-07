@@ -6,7 +6,6 @@ import operator
 from model import PredictionEncoderModel, PredictionDecoderModel, TrainingModel
 from word2vec_preprocessing import embedding_dimension
 import numpy as np
-import re
 
 def word2vec(word2vec_path):
 	print('Reading word2vec data... ')
@@ -34,41 +33,32 @@ if __name__ == '__main__':
 	print "Loading training data"
 	with open(args.data) as f:
 		data = pickle.load(f)
-	print "Done" 
+	print "Done"
 
 	word_vector, get_word_vector = word2vec(args.word2vec_path)
 
 	index_word_map = dict((idx,word) for idx, word in enumerate(sorted(word_vector.vocab.keys())) )
 
-	sentence, context, qn_output, qn_input, answer = operator.itemgetter("sentence", "context", "qn_output", "qn_input", "answer")(data)
-	
+	context, qn_output, qn_input, answer = operator.itemgetter("context", "qn_output", "qn_input", "answer")(data)
 
-	trained_model = TrainingModel()
-	trained_model.load_weights(args.path_to_load_weights)
+	train_model = TrainingModel()
+	train_model.load_weights(args.path_to_load_weights)
 
 	encoder_model = PredictionEncoderModel()
-	for layer in encoder_model.layers:
-		if re.search('(input)|(concatenate)',layer.name):
-			continue
-		encoder_model.get_layer(layer.name).set_weights(trained_model.get_layer(layer.name).get_weights())
+	encoder_model.get_layer("encoder_lstm").set_weights(train_model.get_layer("encoder_lstm").get_weights())
 
 	decoder_model = PredictionDecoderModel()
-	for layer in decoder_model.layers:
-		if re.search('(input)|(concatenate)',layer.name):
-			continue
-		decoder_model.get_layer(layer.name).set_weights(trained_model.get_layer(layer.name).get_weights())
+	decoder_model.get_layer("decoder_lstm").set_weights(train_model.get_layer("decoder_lstm").get_weights())
+	decoder_model.get_layer("dense").set_weights(train_model.get_layer("dense").get_weights())
 
 	max_decoder_seq_length = 200
 	start = 0
 	end = 100
-	for sent, qn in zip(sentence[start:end:5], qn_input[start:end:5]):
+	for cxt, qn in zip(context[start:end:5], qn_input[start:end:5]):
 		print qn
-		print sent
-		embedded_sent = [get_word_vector(token) for token in sent]
-		encoder_input = np.array(embedded_sent).reshape((1,len(embedded_sent),embedding_dimension))
-		encoder_outputs, state_h, state_c = encoder_model.predict(encoder_input)
-
-		states_value = [state_h, state_c]
+		embedded_context = [get_word_vector(token) for token in cxt]
+		encoder_input = np.array(embedded_context).reshape((1,len(embedded_context),embedding_dimension))
+		states_value = encoder_model.predict(encoder_input)
 
 		decoder_token_vector = get_word_vector("<start>")
 		decoder_input = np.array(decoder_token_vector).reshape((1,1,embedding_dimension))
@@ -79,7 +69,7 @@ if __name__ == '__main__':
 
 		qn_idx = 1
 		while not stop_condition:
-			output_token, h, c = decoder_model.predict([decoder_input] + states_value + [encoder_outputs])
+			output_token, h, c = decoder_model.predict([decoder_input] + states_value)
 
 			token_index = np.argmax(output_token)
 			token = index_word_map[token_index]
@@ -90,7 +80,6 @@ if __name__ == '__main__':
 
 			decoder_token_vector = get_word_vector(token)
 			decoder_input = np.array(decoder_token_vector).reshape((1,1,embedding_dimension))
-			
 			"""token = qn[min(qn_idx, len(qn)-1)]
 			print token
 			decoder_token_vector = get_word_vector(token)

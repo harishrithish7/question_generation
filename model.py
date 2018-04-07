@@ -5,11 +5,39 @@ from keras.utils.vis_utils import plot_model
 from word2vec_preprocessing import embedding_dimension, word_vector_len
 import numpy as np
 import tensorflow as K
+from keras import optimizers
 
 #from keras import backend as K
 from keras.engine.topology import Layer
 
-hidden_dim = 256
+hidden_dim = 600
+
+"""class EncodeContext(Layer):
+
+    def __init__(self, output_dim, **kwargs):
+        self.output_dim = output_dim
+        super(EncodeContext, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.W_t = self.add_weight(name='W_t', 
+                                      shape=(1, 1, input_shape[2]),
+                                      initializer='glorot_uniform',
+                                      trainable=True)
+        super(EncodeContext, self).build(input_shape) 
+
+    def call(self, x):
+        W_t_broadcast = K.tile(self.W_t, [K.shape(x)[0],K.shape(x)[1],1])
+
+        tanh_input = K.multiply(W_t_broadcast, x)
+        tanh_output = K.tanh(tanh_input)
+
+        softmax_inputs = K.matmul(tanh_output, self.W_s)
+        softmax = Softmax(axis=-1)
+        softmax_outputs = softmax(softmax_inputs)
+        return softmax_outputs
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], self.output_dim)"""
 
 class Attention(Layer):
 
@@ -57,45 +85,9 @@ class Attention(Layer):
         b_shape, h_shape = input_shape
         return (h_shape[0], h_shape[1], b_shape[2])
 
-class EncodeContext(Layer):
-
-    def __init__(self, output_dim, **kwargs):
-        self.output_dim = output_dim
-        super(EncodeContext, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        self.W_t = self.add_weight(name='W_t', 
-                                      shape=(1, 1, input_shape[2]),
-                                      initializer='glorot_uniform',
-                                      trainable=True)
-        """self.W_s = self.add_weight(name='W_s', 
-                                      shape=(1, input_shape[2], self.output_dim),
-                                      initializer='glorot_uniform',
-                                      trainable=True)"""
-        super(EncodeContext, self).build(input_shape) 
-
-    def call(self, x):
-        W_t_broadcast = K.tile(self.W_t, [K.shape(x)[0],K.shape(x)[1],1])
-
-        tanh_input = K.multiply(W_t_broadcast, x)
-        tanh_output = K.tanh(tanh_input)
-
-        """softmax_inputs = K.matmul(tanh_output, self.W_s)
-        softmax = Softmax(axis=-1)
-        softmax_outputs = softmax(softmax_inputs)
-        return softmax_outputs"""
-
-        dense = Dense(self.output_dim, activation="softmax")
-        dense_outputs = dense(tanh_output)
-        return dense_outputs
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1], self.output_dim)
-
-
 def TrainingModel():
     encoder_inputs = Input(shape=(None, embedding_dimension))
-    encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat')
+    encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat', name="bidirectional_lstm")
     encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
 
     state_h = Concatenate()([forward_h, backward_h])
@@ -112,11 +104,58 @@ def TrainingModel():
 
     encode_context_input = Concatenate()([decoder_outputs, cxt_vector])
 
-    encode_context = EncodeContext(word_vector_len, name="encode_context")
-    encoded_output = encode_context(encode_context_input)
+    #encode_context = EncodeContext(output_dim=word_vector_len, name="encode_context")
+    #encoded_output = encode_context(encode_context_input)
 
-    model = Model([encoder_inputs, decoder_inputs], encoded_output)
+    """model = Model([encoder_inputs, decoder_inputs], encoded_output)"""
+
+    decoder_dense = Dense(word_vector_len, activation="softmax", name="dense")
+    outputs = decoder_dense(encode_context_input)
+    model = Model([encoder_inputs, decoder_inputs], outputs)
+
+    sgd = optimizer.SGD(lr=1.0)
+
     model.compile(optimizer="rmsprop", loss="categorical_crossentropy")
+    plot_model(model, to_file='training_model.png', show_shapes=True)
+    return model
 
+def PredictionEncoderModel():
+    encoder_inputs = Input(shape=(None, embedding_dimension))
+    encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat', name="bidirectional_lstm")
+    encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
+
+    state_h = Concatenate()([forward_h, backward_h])
+    state_c = Concatenate()([forward_c, backward_c])
+    encoder_states = [state_h, state_c]
+
+    model = Model(encoder_inputs, [encoder_outputs] + encoder_states)
+    plot_model(model, to_file='prediction_encoder_model.png', show_shapes=True)
+    return model
+
+def PredictionDecoderModel():
+    decoder_inputs = Input(shape=(None, embedding_dimension))
+
+    decoder_state_input_h = Input(shape=(2*hidden_dim,))
+    decoder_state_input_c = Input(shape=(2*hidden_dim,))
+    decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+
+    decoder_lstm = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm")
+    decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
+    decoder_states = [state_h, state_c]
+
+    encoder_outputs = Input(shape=(None, 2*hidden_dim))
+
+    attention = Attention(name="attention")
+    cxt_vector = attention([encoder_outputs, decoder_outputs])
+
+    encode_context_input = Concatenate()([decoder_outputs, cxt_vector])
+
+    #encode_context = EncodeContext(word_vector_len, name="encode_context")
+    #encoded_output = encode_context(encode_context_input)
+
+    decoder_dense = Dense(word_vector_len, activation="softmax", name="dense")
+    outputs = decoder_dense(encode_context_input)
+
+    model = Model([decoder_inputs] + decoder_states_inputs + [encoder_outputs], [outputs] + decoder_states)
     plot_model(model, to_file='training_model.png', show_shapes=True)
     return model

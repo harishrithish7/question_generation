@@ -123,7 +123,7 @@ if __name__ == '__main__':
 
     sentences, contexts, qn_output, answers, qn_input = np.array(sentences), np.array(contexts), np.array(qn_output), np.array(answers), np.array(qn_input)
     data = {
-        "sentences": sentences,
+        "sentence": sentences,
         "context": contexts,
         "qn_output": qn_output,
         "answer": answers,
@@ -140,7 +140,7 @@ if __name__ == '__main__':
     indices = np.random.choice(len(contexts), trimmed_len, replace=False)
 
     data = {
-        "sentences": sentences[indices],
+        "sentence": sentences[indices],
         "context": contexts[indices],
         "qn_output": qn_output[indices],
         "answer": answers[indices],
