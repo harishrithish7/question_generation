@@ -2,7 +2,7 @@ from keras.models import Model
 from keras.layers import Input, LSTM, Dense, Bidirectional, Concatenate, Softmax
 import cPickle as pickle
 from keras.utils.vis_utils import plot_model
-from word2vec_preprocessing import embedding_dimension, word_vector_len
+from word2vec_preprocessing import embedding_dimension, decoder_tokens
 import numpy as np
 import tensorflow as K
 from keras import optimizers
@@ -11,6 +11,7 @@ from keras import optimizers
 from keras.engine.topology import Layer
 
 hidden_dim = 600
+dropout = 0.3
 
 """class EncodeContext(Layer):
 
@@ -87,46 +88,57 @@ class Attention(Layer):
 
 def TrainingModel():
     encoder_inputs = Input(shape=(None, embedding_dimension))
-    encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat', name="bidirectional_lstm")
-    encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
-
+    encoder_outputs, forward_h, forward_c, backward_h, backward_c =  Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm_1"), merge_mode='concat', name="bidirectional_lstm_1")(encoder_inputs)
     state_h = Concatenate()([forward_h, backward_h])
     state_c = Concatenate()([forward_c, backward_c])
-    encoder_states = [state_h, state_c]
+    encoder_states_1 = [state_h, state_c]
+
+    encoder_outputs, forward_h, forward_c, backward_h, backward_c = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm_2", dropout=dropout), merge_mode='concat', name="bidirectional_lstm_2")(encoder_outputs)
+    state_h = Concatenate()([forward_h, backward_h])
+    state_c = Concatenate()([forward_c, backward_c])
+    encoder_states_2 = [state_h, state_c]
+    
 
 
     decoder_inputs = Input(shape=(None, embedding_dimension))
-    decoder_lstm = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm")
-    decoder_outputs, _, _ = decoder_lstm(decoder_inputs, initial_state=encoder_states)
+    decoder_lstm_1 = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm_1")
+    decoder_outputs, _, _ = decoder_lstm_1(decoder_inputs, initial_state=encoder_states_1)
+    decoder_lstm_2 = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm_2", dropout=dropout)
+    decoder_outputs, _, _ = decoder_lstm_2(decoder_outputs, initial_state=encoder_states_2)
 
     attention = Attention(name="attention")
     cxt_vector = attention([encoder_outputs, decoder_outputs])
 
     encode_context_input = Concatenate()([decoder_outputs, cxt_vector])
 
-    #encode_context = EncodeContext(output_dim=word_vector_len, name="encode_context")
+    #encode_context = EncodeContext(output_dim=decoder_tokens, name="encode_context")
     #encoded_output = encode_context(encode_context_input)
 
     """model = Model([encoder_inputs, decoder_inputs], encoded_output)"""
 
-    decoder_dense = Dense(word_vector_len, activation="softmax", name="dense")
+    decoder_dense = Dense(decoder_tokens, activation="softmax", name="dense")
     outputs = decoder_dense(encode_context_input)
     model = Model([encoder_inputs, decoder_inputs], outputs)
 
-    sgd = optimizer.SGD(lr=1.0)
+    sgd = optimizers.SGD(lr=1.0)
 
-    model.compile(optimizer="rmsprop", loss="categorical_crossentropy")
+    model.compile(optimizer="sgd", loss="categorical_crossentropy")
     plot_model(model, to_file='training_model.png', show_shapes=True)
     return model
 
 def PredictionEncoderModel():
     encoder_inputs = Input(shape=(None, embedding_dimension))
-    encoder = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm"), merge_mode='concat', name="bidirectional_lstm")
-    encoder_outputs, forward_h, forward_c, backward_h, backward_c = encoder(encoder_inputs)
-
+    encoder_outputs, forward_h, forward_c, backward_h, backward_c =  Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm_1"), merge_mode='concat', name="bidirectional_lstm_1")(encoder_inputs)
     state_h = Concatenate()([forward_h, backward_h])
     state_c = Concatenate()([forward_c, backward_c])
-    encoder_states = [state_h, state_c]
+    encoder_states_1 = [state_h, state_c]
+
+    encoder_outputs, forward_h, forward_c, backward_h, backward_c = Bidirectional(LSTM(hidden_dim, return_state=True, return_sequences=True, name="encoder_lstm_2", dropout=dropout), merge_mode='concat', name="bidirectional_lstm_2")(encoder_outputs)
+    state_h = Concatenate()([forward_h, backward_h])
+    state_c = Concatenate()([forward_c, backward_c])
+    encoder_states_2 = [state_h, state_c]
+
+    encoder_states = encoder_states_1 + encoder_states_2
 
     model = Model(encoder_inputs, [encoder_outputs] + encoder_states)
     plot_model(model, to_file='prediction_encoder_model.png', show_shapes=True)
@@ -137,11 +149,21 @@ def PredictionDecoderModel():
 
     decoder_state_input_h = Input(shape=(2*hidden_dim,))
     decoder_state_input_c = Input(shape=(2*hidden_dim,))
-    decoder_states_inputs = [decoder_state_input_h, decoder_state_input_c]
+    decoder_states_inputs_1 = [decoder_state_input_h, decoder_state_input_c]
+    decoder_lstm_1 = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm_1")
+    decoder_outputs, state_h, state_c = decoder_lstm_1(decoder_inputs, initial_state=decoder_states_inputs_1)
+    decoder_states_1 = [state_h, state_c]
 
-    decoder_lstm = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm")
-    decoder_outputs, state_h, state_c = decoder_lstm(decoder_inputs, initial_state=decoder_states_inputs)
-    decoder_states = [state_h, state_c]
+    decoder_state_input_h = Input(shape=(2*hidden_dim,))
+    decoder_state_input_c = Input(shape=(2*hidden_dim,))
+    decoder_states_inputs_2 = [decoder_state_input_h, decoder_state_input_c]
+    decoder_lstm_2 = LSTM(2*hidden_dim, return_sequences=True, return_state=True, name="decoder_lstm_2", dropout=dropout)
+    decoder_outputs, state_h, state_c = decoder_lstm_2(decoder_outputs, initial_state=decoder_states_inputs_2)
+    decoder_states_2 = [state_h, state_c]
+
+    decoder_states_inputs = decoder_states_inputs_1 + decoder_states_inputs_2
+
+    decoder_states = decoder_states_1 + decoder_states_2
 
     encoder_outputs = Input(shape=(None, 2*hidden_dim))
 
@@ -150,12 +172,14 @@ def PredictionDecoderModel():
 
     encode_context_input = Concatenate()([decoder_outputs, cxt_vector])
 
-    #encode_context = EncodeContext(word_vector_len, name="encode_context")
+    #encode_context = EncodeContext(decoder_tokens, name="encode_context")
     #encoded_output = encode_context(encode_context_input)
 
-    decoder_dense = Dense(word_vector_len, activation="softmax", name="dense")
+    decoder_dense = Dense(decoder_tokens, activation="softmax", name="dense")
     outputs = decoder_dense(encode_context_input)
 
     model = Model([decoder_inputs] + decoder_states_inputs + [encoder_outputs], [outputs] + decoder_states)
-    plot_model(model, to_file='training_model.png', show_shapes=True)
+    plot_model(model, to_file='prediction_decoder_model.png', show_shapes=True)
     return model
+
+

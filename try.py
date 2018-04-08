@@ -4,7 +4,7 @@ from unidecode import unidecode
 import cPickle as pickle
 import numpy as np
 from keras.models import Model
-from model import TrainingModel
+from model import PredictionDecoderModel
 
 """print "Loading data"
 with open("data/preprocessed_data.pkl") as f:
@@ -27,7 +27,7 @@ data = {
 with open("data/preprocessed_data_trimmed.pkl", "wb") as f:
     pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)"""
 
-import json
+"""import json
 
 print('Reading SQuAD data... ')
 with open("data/train_parsed_trimmed.pkl") as fd:
@@ -37,7 +37,9 @@ print('Done!')
 print len(samples)
 
 model = TrainingModel()
-model.load_weights("pre-trained/current.hdf5")
+model.load_weights("pre-trained/current.hdf5")"""
+
+model = PredictionDecoderModel()
 
 
 

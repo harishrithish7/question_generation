@@ -7,6 +7,7 @@ from tqdm import tqdm
 from unidecode import unidecode
 from gensim.models import KeyedVectors
 from stanford_corenlp_pywrapper import CoreNLP
+from word2vec_preprocessing import embedding_dimension, corpus
 
 CoreNLP_path = '/home/h7predator/ml_code/stanford-corenlp-full-2018-02-27/'
 
@@ -96,7 +97,7 @@ def parse_sample(tokenize_with_offset, tokenize, word_index_map, context, questi
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--word2vec_path', type=str,
-                        default='data/glove.6B.100d.trimmed.vec',
+                        default='data/glove.{}B.{}d.decoder.vec'.format(corpus, embedding_dimension),
                         help='Word2Vec vectors file path')
     parser.add_argument('--outfile', type=str, default='data/preprocessed_data.pkl',
                         help='Desired path to output pickle')

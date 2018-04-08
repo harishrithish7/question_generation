@@ -6,70 +6,53 @@ from random import random
 embedding_dimension = 300
 encoder_tokens = 45000+3
 decoder_tokens = 28000+3
-num_words = 840 # in billions
+corpus = 840 # in billions
 
 def produce_vector():
-	return [str("%.6f" % (random()*2.0-1.0)) for _ in xrange(embedding_dimension)].join(' ')[:-1]
-
-start = produce_vector()
-end = produce_vector()
-unk = produce_vector()
-
-with open("data/glove.{}B.{}.encoder.txt".format(num_words, embedding_dimension)) as f:
-	with open("data/glove.{}B.{}.trimmed.decoder.txt".format(num_words, embedding_dimension), "w") as f1:
-		with open("data/glove.{}B.{}.trimmed.encoder.txt".format(num_words, embedding_dimension), "w") as f2:
-
-			f1.write("<start> ")
-			f1.write(start)
-			f1.write("\n")
-
-			f1.write("<end> ")
-			f1.write(end)
-			f1.write("\n")
-
-			f1.write("<unk> ")
-			f1.write(unk)
-			f1.write("\n")
-
-			i = 3
-			for line in f:
-				f1.write(line)
-				i += 1
-				if i == encoder_tokens:
-					break
-glove2word2vec("data/glove.{}B.{}d.trimmed.encoder.txt".format(num_words, embedding_dimension), "data/glove.{}B.{}d.trimmed.encoder.vec".format(num_words, embedding_dimension))
+	return ' '.join([str("%.6f" % (random()*2.0-1.0)) for _ in xrange(embedding_dimension)])[:-1]
 
 
-with open("data/glove.{}B.{}.decoder.txt".format(num_words, embedding_dimension)) as f:
-	with open("data/glove.{}B.{}.trimmed.decoder.txt".format(num_words, embedding_dimension), "w") as f1:
-		f1.write("<start> ")
-		for i in xrange(embedding_dimension):
-			f1.write( str("%.6f" % (random()*2.0-1.0)) )
-			if i == embedding_dimension-1:
-				f1.write("\n")
-			else:
-				f1.write(" ")
+if __name__ == '__main__':
+	start = produce_vector()
+	end = produce_vector()
+	unk = produce_vector()
 
-		f1.write("<end> ")
-		for i in xrange(embedding_dimension):
-			f1.write( str("%.6f" % (random()*2.0-1.0)) )
-			if i == embedding_dimension-1:
-				f1.write("\n")
-			else:
-				f1.write(" ")
+	tokens_added = []
 
-		f1.write("<unk> ")
-		for i in xrange(embedding_dimension):
-			f1.write( str("%.6f" % (random()*2.0-1.0)) )
-			if i == embedding_dimension-1:
-				f1.write("\n")
-			else:
-				f1.write(" ")
+	print("Writing encoder and decoder to .txt file")
+	with open("data/glove.{}B.{}d.txt".format(corpus, embedding_dimension)) as f:
+		with open("data/glove.{}B.{}d.decoder.txt".format(corpus, embedding_dimension), "w") as f1:
+			with open("data/glove.{}B.{}d.encoder.txt".format(corpus, embedding_dimension), "w") as f2:
+				for file in [f1,f2]:
+					file.write("<start> ")
+					file.write(start)
+					file.write("\n")
 
-		i = 3
-		for line in f:
-			f1.write(line)
-			i += 1
-			if i == decoder_tokens:
-				break
-glove2word2vec("data/glove.{}B.{}d.trimmed.decoder.txt".format(num_words, embedding_dimension), "data/glove.{}B.{}d.trimmed.decoder.vec".format(num_words, embedding_dimension))
+					file.write("<end> ")
+					file.write(end)
+					file.write("\n")
+
+					file.write("<unk> ")
+					file.write(unk)
+					file.write("\n")
+
+				tokens = 3
+				for line in f:
+					if line.split(' ')[0].lower() in tokens_added:
+						continue
+					files = [f1,f2] if tokens < decoder_tokens else [f2]
+					for file in files:
+						file.write(line.lower())
+					tokens += 1
+					tokens_added.append(line.split(' ')[0].lower())
+					if tokens == encoder_tokens:
+						break
+	print("Done!")
+
+	print("Converting encoder vector from .txt to .vec")
+	glove2word2vec("data/glove.{}B.{}d.encoder.txt".format(corpus, embedding_dimension), "data/glove.{}B.{}d.encoder.vec".format(corpus, embedding_dimension))
+	print("Done!")
+
+	print("Converting decoder vector from .txt to .vec")
+	glove2word2vec("data/glove.{}B.{}d.decoder.txt".format(corpus, embedding_dimension), "data/glove.{}B.{}d.decoder.vec".format(corpus, embedding_dimension))
+	print("Done!")

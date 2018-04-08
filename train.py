@@ -6,7 +6,7 @@ import random
 from keras.preprocessing.sequence import pad_sequences
 from keras.utils import to_categorical
 from keras.callbacks import ModelCheckpoint
-from word2vec_preprocessing import word_vector_len
+from word2vec_preprocessing import decoder_tokens, embedding_dimension, corpus
 from gensim.models import KeyedVectors
 from keras.models import load_model
 import argparse
@@ -65,7 +65,7 @@ def DataGen(sentence, qn_output, qn_input, get_word_vector):
             padded_question_input = pad_sequences(embedded_question_input, maxlen=len(max(embedded_question_input, key=len)), padding='post')
             
             padded_question_output = pad_sequences(question_output_bins[bin_idx], maxlen=len(max(question_output_bins[bin_idx], key=len)), padding='post')
-            one_hot_question_output = to_categorical(padded_question_output, num_classes=word_vector_len)
+            one_hot_question_output = to_categorical(padded_question_output, num_classes=decoder_tokens)
 
             sentence_bins[bin_idx] = []
             question_output_bins[bin_idx] = []
@@ -78,7 +78,7 @@ def DataGen(sentence, qn_output, qn_input, get_word_vector):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--word2vec_path', type=str,
-                        default='data/glove.6B.100d.trimmed.vec',
+                        default='data/glove.{}B.{}d.encoder.vec'.format(corpus, embedding_dimension),
                         help='Word2Vec vectors file path')
     parser.add_argument('--data', type=str, default='data/preprocessed_data.pkl',
                         help='Desired path to output pickle')
